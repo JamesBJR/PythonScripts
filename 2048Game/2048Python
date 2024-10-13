@@ -1,21 +1,33 @@
 import random
 import tkinter as tk
 import tkinter.messagebox
-import time
+import pygame
 
 class Game2048:
     def __init__(self):
+        pygame.init()
+        pygame.joystick.init()
+        if pygame.joystick.get_count() > 0:
+            self.joystick = pygame.joystick.Joystick(0)
+            self.joystick.init()
+        else:
+            self.joystick = None
+
         self.board = self.initialize_board()
         self.window = tk.Tk()
         self.window.title("2048 Game")
+        self.canvas = tk.Canvas(self.window, width=420, height=420, bg="lightgray")
+        self.canvas.pack()
         self.cells = [[None for _ in range(4)] for _ in range(4)]
         self.create_grid()
+        self.new_tile_position = None
         self.update_grid()
         self.window.bind("<Key>", self.handle_keypress)
         self.window.bind("<ButtonPress-1>", self.on_mouse_press)
         self.window.bind("<ButtonRelease-1>", self.on_mouse_release)
         self.start_x = None
         self.start_y = None
+        self.window.after(100, self.handle_joystick_input)
         self.window.mainloop()
 
     def initialize_board(self):
@@ -29,32 +41,33 @@ class Game2048:
         if empty_cells:
             r, c = random.choice(empty_cells)
             board[r][c] = 4 if random.random() < 0.1 else 2
+            self.new_tile_position = (r, c)
 
     def create_grid(self):
         for r in range(4):
             for c in range(4):
-                frame = tk.Frame(
-                    self.window,
-                    width=100,
-                    height=100,
-                    bg="lightgray",
-                    bd=3,
-                    relief="raised"
-                )
-                frame.grid(row=r, column=c, padx=5, pady=5)
-                label = tk.Label(self.window, text="", font=("Helvetica", 24), width=4, height=2)
-                label.grid(row=r, column=c)
-                self.cells[r][c] = label
+                x0 = c * 105 + 5
+                y0 = r * 105 + 5
+                x1 = x0 + 100
+                y1 = y0 + 100
+                self.cells[r][c] = self.canvas.create_rectangle(x0, y0, x1, y1, fill="lightgray", outline="black")
+                self.canvas.create_text((x0 + x1) // 2, (y0 + y1) // 2, text="", font=("Helvetica", 24), tags=f"text_{r}_{c}")
 
     def update_grid(self):
         for r in range(4):
             for c in range(4):
                 value = self.board[r][c]
-                label = self.cells[r][c]
-                if value == 0:
-                    label.config(text="", bg="lightgray")
+                if self.new_tile_position == (r, c):
+                    color = "lightyellow" if value != 0 else "lightgray"
                 else:
-                    label.config(text=str(value), bg="orange", fg="black")
+                    color = "lightgray" if value == 0 else "orange"
+                self.canvas.itemconfig(self.cells[r][c], fill=color)
+                text_tag = f"text_{r}_{c}"
+                if value == 0:
+                    self.canvas.itemconfig(text_tag, text="")
+                else:
+                    self.canvas.itemconfig(text_tag, text=str(value))
+        self.new_tile_position = None
 
     def slide_left(self, row):
         new_row = [i for i in row if i != 0]
@@ -62,10 +75,12 @@ class Game2048:
         return new_row
 
     def combine_row(self, row):
+        combined = [False] * 4
         for i in range(3):
-            if row[i] == row[i + 1] and row[i] != 0:
+            if row[i] == row[i + 1] and row[i] != 0 and not combined[i] and not combined[i + 1]:
                 row[i] *= 2
                 row[i + 1] = 0
+                combined[i] = True
         return row
 
     def move_left(self, board):
@@ -121,11 +136,38 @@ class Game2048:
             old_board = [row[:] for row in self.board]
             self.move(event.keysym)
             if old_board != self.board:
-                self.animate_slide(old_board, self.board)
                 self.add_random_tile(self.board)
                 self.update_grid()
                 if self.check_game_over():
                     tk.messagebox.showinfo("Game Over", "Game Over!")
+
+    def handle_joystick_input(self):
+        if self.joystick:
+            pygame.event.pump()
+            axis_0 = self.joystick.get_axis(0)
+            axis_1 = self.joystick.get_axis(1)
+
+            if axis_0 < -0.5:
+                direction = 'a'
+            elif axis_0 > 0.5:
+                direction = 'd'
+            elif axis_1 < -0.5:
+                direction = 'w'
+            elif axis_1 > 0.5:
+                direction = 's'
+            else:
+                direction = None
+
+            if direction:
+                old_board = [row[:] for row in self.board]
+                self.move(direction)
+                if old_board != self.board:
+                    self.add_random_tile(self.board)
+                    self.update_grid()
+                    if self.check_game_over():
+                        tk.messagebox.showinfo("Game Over", "Game Over!")
+
+        self.window.after(100, self.handle_joystick_input)
 
     def on_mouse_press(self, event):
         self.start_x = event.x
@@ -151,39 +193,10 @@ class Game2048:
         old_board = [row[:] for row in self.board]
         self.move(direction)
         if old_board != self.board:
-            self.animate_slide(old_board, self.board)
             self.add_random_tile(self.board)
             self.update_grid()
             if self.check_game_over():
                 tk.messagebox.showinfo("Game Over", "Game Over!")
-
-    def animate_slide(self, old_board, new_board):
-        steps = 20  # Increase steps for smoother animation
-        for step in range(1, steps + 1):
-            intermediate_board = [[0] * 4 for _ in range(4)]
-            for r in range(4):
-                for c in range(4):
-                    if new_board[r][c] != 0 and old_board[r][c] != new_board[r][c]:
-                        old_r, old_c = None, None
-                        for orow in range(4):
-                            for ocol in range(4):
-                                if old_board[orow][ocol] == new_board[r][c] and intermediate_board[orow][ocol] == 0:
-                                    old_r, old_c = orow, ocol
-                                    break
-                            if old_r is not None:
-                                break
-                        if old_r is not None:
-                            dr = (r - old_r) * step / steps
-                            dc = (c - old_c) * step / steps
-                            intermediate_board[int(old_r + dr)][int(old_c + dc)] = new_board[r][c]
-                        else:
-                            intermediate_board[r][c] = new_board[r][c]
-                    else:
-                        intermediate_board[r][c] = new_board[r][c]
-            self.board = intermediate_board
-            self.update_grid()
-            self.window.update()
-            time.sleep(0.02)  # Decrease sleep time for smoother appearance
 
 if __name__ == "__main__":
     Game2048()
