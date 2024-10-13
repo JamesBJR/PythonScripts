@@ -1,0 +1,187 @@
+import pygame
+import random
+
+# Initialize pygame
+pygame.init()
+
+# Set up screen dimensions
+width, height = 800, 600
+screen = pygame.display.set_mode((width, height))
+pygame.display.set_caption('Brick Breaker')
+
+# Define colors
+white = (255, 255, 255)
+black = (0, 0, 0)
+red = (255, 0, 0)
+green = (0, 255, 0)
+blue = (0, 0, 255)
+
+# Paddle properties
+paddle_width = 100
+paddle_height = 20
+paddle_speed = 10
+
+# Ball properties
+ball_radius = 10
+
+# Brick properties
+brick_rows = 5
+brick_cols = 8
+brick_width = int(width / brick_cols)
+brick_height = 30
+
+# Set clock
+clock = pygame.time.Clock()
+
+def draw_bricks(bricks):
+    for brick in bricks:
+        pygame.draw.rect(screen, red, brick)
+
+def draw_score(score, level):
+    font = pygame.font.SysFont('comicsansms', 35)
+    value = font.render(f"Score: {score}  Level: {level}", True, white)
+    screen.blit(value, [10, 10])
+
+def create_bricks(level):
+    bricks = []
+    if level == 1:
+        for i in range(5):
+            bricks.append(pygame.Rect(random.randint(0, int(width - brick_width)), random.randint(0, brick_height * 3), brick_width, brick_height))
+    else:
+        for row in range(brick_rows):
+            for col in range(brick_cols):
+                if random.random() > 0.3:  # Randomly leave holes
+                    brick_width_variation = brick_width * random.choice([1, 1.5])  # Create long chains
+                    bricks.append(pygame.Rect(col * brick_width, row * brick_height, brick_width_variation, brick_height))
+    return bricks
+
+def gameLoop():
+    paddle_x = (width - paddle_width) / 2
+    paddle_y = height - 40
+
+    ball_x = width / 2
+    ball_y = height / 2
+    ball_speed_x = 4 * random.choice((1, -1))
+    ball_speed_y = -4
+
+    level = 1
+    bricks = create_bricks(level)
+    score = 0
+    level = 1
+    game_over = False
+    game_close = False
+
+    while not game_over:
+        while game_close:
+            screen.fill(black)
+            font = pygame.font.SysFont('bahnschrift', 30)
+            message = font.render("You Lost! Press C to Play Again or Q to Quit", True, red)
+            screen.blit(message, [width / 6, height / 3])
+            pygame.display.update()
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    game_over = True
+                    game_close = False
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_q:
+                        game_over = True
+                        game_close = False
+                    if event.key == pygame.K_c:
+                        gameLoop()
+
+        screen.fill(black)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                game_over = True
+
+        # Paddle movement
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_LEFT] and paddle_x > 0:
+            paddle_x -= paddle_speed
+        if keys[pygame.K_RIGHT] and paddle_x < width - paddle_width:
+            paddle_x += paddle_speed
+
+        # Cheat code: Paddle becomes 50x longer when 'L' is pressed
+        current_paddle_width = paddle_width
+        if keys[pygame.K_l]:
+            current_paddle_width = paddle_width * 50
+        else:
+            current_paddle_width = paddle_width
+
+        # Cheat code: Ball speed is multiplied by 20 when 'P' is pressed
+        current_ball_speed_x = ball_speed_x
+        current_ball_speed_y = ball_speed_y
+        if keys[pygame.K_p]:
+            current_ball_speed_x = ball_speed_x * 20
+            current_ball_speed_y = ball_speed_y * 20
+
+        # Cheat code: Reset ball position when 'O' is pressed
+        if keys[pygame.K_o]:
+            ball_x = width / 2
+            ball_y = height / 2
+            ball_speed_x = 4 * random.choice((1, -1))
+            ball_speed_y = -4
+
+        # Ball movement
+        ball_x += current_ball_speed_x
+        ball_y += current_ball_speed_y
+
+        # Ball collision with walls
+        if ball_x <= 0 or ball_x >= width - ball_radius:
+            ball_speed_x *= -1
+        if ball_y <= 0:
+            ball_speed_y *= -1
+
+        # Ball collision with paddle
+        paddle_rect = pygame.Rect(paddle_x, paddle_y, current_paddle_width, paddle_height)
+        if paddle_rect.collidepoint(ball_x, ball_y + ball_radius):
+            ball_speed_y *= -1
+
+        # Ball collision with bricks
+        for brick in bricks[:]:
+            if brick.collidepoint(ball_x, ball_y):
+                bricks.remove(brick)
+                ball_speed_y *= -1
+                score += 1
+                # Increase ball speed by 1% for every brick broken
+                ball_speed_x *= 1.01
+                ball_speed_y *= 1.01
+                break
+
+        # Ball out of bounds
+        if ball_y >= height:
+            game_close = True
+
+        # Check if all bricks are broken
+        if not bricks:
+            level += 1
+            bricks = create_bricks(level)
+            ball_x = width / 2
+            ball_y = height / 2
+            ball_speed_x = 4 * random.choice((1, -1))
+            ball_speed_y = -4
+
+        # Draw paddle
+        pygame.draw.rect(screen, blue, paddle_rect)
+
+        # Draw ball
+        pygame.draw.circle(screen, green, (ball_x, ball_y), ball_radius)
+
+        # Draw bricks
+        draw_bricks(bricks)
+
+        # Draw score and level
+        draw_score(score, level)
+
+        # Update display
+        pygame.display.update()
+
+        # Set frame rate
+        clock.tick(60)
+
+    pygame.quit()
+    quit()
+
+gameLoop()
