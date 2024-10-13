@@ -3,7 +3,7 @@ from tkinter import ttk, messagebox, filedialog, colorchooser, simpledialog, scr
 
 
 ### build using "C:\Users\BJRte\AppData\Roaming\Python\Python313\Scripts\pyinstaller.exe" --onefile --windowed "C:\Users\BJRte\OneDrive\Desktop\Python Scripts\TestEnviroment\GuiPlayground.py"
-
+### merged with git
 
 # Function to update label text when button is clicked
 def on_button_click():
