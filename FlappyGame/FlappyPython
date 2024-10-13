@@ -1,0 +1,147 @@
+import pygame
+import sys
+import random
+
+# Initialize Pygame
+pygame.init()
+
+# Screen dimensions
+SCREEN_WIDTH = 400
+SCREEN_HEIGHT = 600
+
+# Colors
+WHITE = (255, 255, 255)
+
+# Game variables
+GRAVITY = 0.25
+FLAP_STRENGTH = -5
+PIPE_GAP = 150
+PIPE_FREQUENCY = 1500  # milliseconds
+FONT = pygame.font.Font(None, 36)
+
+# Set up the screen
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+pygame.display.set_caption("Flappy Bird")
+clock = pygame.time.Clock()
+
+# Load images
+bird_image = pygame.image.load(r"C:\GitHubRepos\PythonScripts\FlappyGame\bird.png").convert_alpha()
+background_image = pygame.image.load(r"C:\GitHubRepos\PythonScripts\FlappyGame\background.png").convert()
+pipe_image = pygame.image.load(r"C:\GitHubRepos\PythonScripts\FlappyGame\pipe.png").convert_alpha()
+
+# Initialize joystick
+if pygame.joystick.get_count() > 0:
+    joystick = pygame.joystick.Joystick(0)
+    joystick.init()
+
+# Bird class
+class Bird:
+    def __init__(self):
+        self.image = bird_image
+        self.x = 50
+        self.y = SCREEN_HEIGHT // 2
+        self.velocity = 0
+
+    def flap(self):
+        self.velocity = FLAP_STRENGTH
+
+    def update(self):
+        self.velocity += GRAVITY
+        self.y += self.velocity
+
+    def draw(self, screen):
+        screen.blit(self.image, (self.x, self.y))
+
+# Pipe class
+class Pipe:
+    def __init__(self, x):
+        self.x = x
+        self.height = random.randint(100, SCREEN_HEIGHT - PIPE_GAP - 100)
+        self.top = pipe_image
+        self.bottom = pygame.transform.flip(pipe_image, False, True)
+
+    def update(self):
+        self.x -= 2
+
+    def draw(self, screen):
+        screen.blit(self.bottom, (self.x, self.height + PIPE_GAP))
+        screen.blit(self.top, (self.x, self.height - pipe_image.get_height()))
+
+# Game functions
+def check_collision(bird, pipes):
+    if bird.y <= 0 or bird.y >= SCREEN_HEIGHT:
+        return True
+    for pipe in pipes:
+        if bird.x + bird_image.get_width() > pipe.x and bird.x < pipe.x + pipe_image.get_width():
+            if bird.y < pipe.height or bird.y > pipe.height + PIPE_GAP:
+                return True
+    return False
+
+def main():
+    bird = Bird()
+    pipes = []
+    score = 0
+    game_over = False
+
+    # Timer for pipes
+    pygame.time.set_timer(pygame.USEREVENT, PIPE_FREQUENCY)
+
+    # Main game loop
+    while True:
+        screen.blit(background_image, (0, 0))
+
+        # Event handling
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE and not game_over:
+                    bird.flap()
+                if event.key == pygame.K_r and game_over:
+                    main()
+            if event.type == pygame.USEREVENT and not game_over:
+                pipes.append(Pipe(SCREEN_WIDTH))
+
+        # Joystick input
+        if not game_over and pygame.joystick.get_count() > 0:
+            if joystick.get_button(0):  # A button
+                bird.flap()
+
+        if not game_over:
+            # Update bird and pipes
+            bird.update()
+            for pipe in pipes:
+                pipe.update()
+            pipes = [pipe for pipe in pipes if pipe.x > -pipe_image.get_width()]
+
+            # Check for collisions
+            if check_collision(bird, pipes):
+                game_over = True
+
+            # Update score
+            for pipe in pipes:
+                if pipe.x + pipe_image.get_width() < bird.x and not hasattr(pipe, 'scored'):
+                    score += 1
+                    pipe.scored = True
+
+        # Draw bird and pipes
+        bird.draw(screen)
+        for pipe in pipes:
+            pipe.draw(screen)
+
+        # Display score
+        score_text = FONT.render(f"Score: {score}", True, WHITE)
+        screen.blit(score_text, (10, 10))
+
+        # Display game over message
+        if game_over:
+            game_over_text = FONT.render("Game Over! Press 'R' to Restart", True, WHITE)
+            screen.blit(game_over_text, (SCREEN_WIDTH // 2 - game_over_text.get_width() // 2, SCREEN_HEIGHT // 2 - game_over_text.get_height() // 2))
+
+        # Update the display
+        pygame.display.update()
+        clock.tick(60)
+
+if __name__ == "__main__":
+    main()
