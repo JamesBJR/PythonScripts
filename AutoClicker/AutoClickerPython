@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import simpledialog
+from tkinter import Toplevel, Button as TkButton, Label, Scrollbar, Canvas, Frame
 from pynput.mouse import Button, Controller
 from pynput import keyboard
 import threading
@@ -10,6 +10,7 @@ clicking = False
 hotkey = "<f4>"
 listener = None
 click_type = Button.left
+selected_keys = set()
 
 # Function to perform the clicking
 def click_mouse(interval):
@@ -37,23 +38,74 @@ def toggle_clicking():
     else:
         start_clicking()
 
-# Function to set a new hotkey
+# Function to set a new hotkey using a popup keyboard window
 def set_hotkey():
-    global hotkey
-    new_hotkey = simpledialog.askstring("Set Hotkey", "Enter a new hotkey (e.g., f4, a, ctrl+shift+a):")
-    if new_hotkey:
-        hotkey = f"<{new_hotkey}>"
+    def on_key_button_click(key):
+        if key in selected_keys:
+            selected_keys.remove(key)
+        else:
+            selected_keys.add(key)
+        update_hotkey_label()
+
+    def update_hotkey_label():
+        current_hotkey_label.config(text=f"Selected Keys: {' + '.join(selected_keys)}")
+
+    def save_hotkey():
+        global hotkey
+        hotkey = '+'.join(selected_keys)
         hotkey_label.config(text=f"Current Hotkey: {hotkey}")
+        hotkey_window.destroy()
+
+    hotkey_window = Toplevel(root)
+    hotkey_window.title("Select Hotkey Combination")
+    hotkey_window.geometry("400x400")
+
+    canvas = Canvas(hotkey_window)
+    scrollbar = Scrollbar(hotkey_window, orient="vertical", command=canvas.yview)
+    scrollable_frame = Frame(canvas)
+
+    scrollable_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+    )
+
+    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    current_hotkey_label = Label(scrollable_frame, text="Selected Keys: None")
+    current_hotkey_label.grid(row=0, column=0, columnspan=6, pady=10)
+
+    keys = [
+        "Control", "Shift", "Alt", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
+        "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+        "1", "2", "3", "4", "5", "6", "7", "8", "9", "0"
+    ]
+
+    for idx, key in enumerate(keys):
+        button = TkButton(scrollable_frame, text=key, width=5, command=lambda k=key: on_key_button_click(k))
+        button.grid(row=(idx // 6) + 1, column=idx % 6, pady=5, padx=5)
+
+    save_button = TkButton(scrollable_frame, text="Save Hotkey", command=save_hotkey)
+    save_button.grid(row=(len(keys) // 6) + 2, column=0, columnspan=6, pady=10)
+
+    canvas.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+
+    # Enable scrolling with mouse wheel
+    def on_mouse_wheel(event):
+        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    canvas.bind_all("<MouseWheel>", on_mouse_wheel)
 
 # Listener for hotkey to toggle clicking
 def on_hotkey_press(key):
     global hotkey
     try:
-        if key == keyboard.Key[hotkey.strip('<>')]:
+        key_str = str(key).replace("'", "")
+        if key_str in hotkey:
             toggle_clicking()
-    except KeyError:
-        if hasattr(key, 'char') and key.char == hotkey.strip('<>'):
-            toggle_clicking()
+    except AttributeError:
+        pass
 
 listener = keyboard.Listener(on_press=on_hotkey_press)
 listener.start()
