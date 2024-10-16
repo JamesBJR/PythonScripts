@@ -1,0 +1,145 @@
+#
+# Python equivalent of Window Spy for AHKv2
+#
+
+import tkinter as tk
+from tkinter import ttk
+import pygetwindow as gw
+import pyautogui
+import threading
+import time
+from PIL import ImageGrab
+import ctypes
+
+class WindowSpy:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Window Spy for Python")
+        self.root.geometry("300x340")  # Subtracting 16 and 39 to compensate for window decorations
+        self.root.resizable(False, False)
+        
+        # Adding Widgets
+        self.follow_mouse = tk.BooleanVar(value=True)
+        self.updates_enabled = True
+        
+        self.title_label = ttk.Label(self.root, text="Window Title, Class and Process:")
+        self.title_label.pack(anchor=tk.W, padx=5, pady=(5, 0))
+        
+        self.follow_mouse_check = ttk.Checkbutton(self.root, text="Follow Mouse", variable=self.follow_mouse)
+        self.follow_mouse_check.pack(anchor=tk.W, padx=5)
+        
+        self.title_text = tk.Text(self.root, height=3, width=35, state="disabled", wrap="none")
+        self.title_text.pack(padx=5)
+        
+        self.mouse_label = ttk.Label(self.root, text="Mouse Position:")
+        self.mouse_label.pack(anchor=tk.W, padx=5, pady=(5, 0))
+        
+        self.mouse_pos_text = tk.Text(self.root, height=3, width=35, state="disabled", wrap="none")
+        self.mouse_pos_text.pack(padx=5)
+        
+        self.color_label = ttk.Label(self.root, text="Color Under Mouse:")
+        self.color_label.pack(anchor=tk.W, padx=5, pady=(5, 0))
+        
+        self.color_frame = ttk.Frame(self.root)
+        self.color_frame.pack(padx=5, pady=(0, 5))
+        
+        self.color_text = tk.Text(self.color_frame, height=2, width=25, state="disabled", wrap="none")
+        self.color_text.grid(row=0, column=0, padx=(0, 5))
+        
+        self.color_preview = tk.Label(self.color_frame, text="", width=5, height=2, relief="solid")
+        self.color_preview.grid(row=0, column=1)
+        
+        self.window_size_label = ttk.Label(self.root, text="Window Size:")
+        self.window_size_label.pack(anchor=tk.W, padx=5, pady=(5, 0))
+        
+        self.window_size_text = tk.Text(self.root, height=2, width=35, state="disabled", wrap="none")
+        self.window_size_text.pack(padx=5, pady=(0, 5))
+        
+        self.suspend_label = ttk.Label(self.root, text="Press P to suspend updates")
+        self.suspend_label.pack(pady=(5, 0))
+        
+        self.update_interval = 0.25  # seconds
+        self.update_thread = threading.Thread(target=self.update_info)
+        self.update_thread.daemon = True
+        self.update_thread.start()
+
+        self.root.bind("p", self.toggle_updates)
+
+    def update_info(self):
+        while True:
+            if self.updates_enabled:
+                try:
+                    self.update_window_info()
+                    self.update_mouse_position()
+                    self.update_color_under_mouse()
+                except Exception as e:
+                    print(f"Error updating info: {e}")
+            time.sleep(self.update_interval)
+
+    def update_window_info(self):
+        if self.follow_mouse.get():
+            x, y = pyautogui.position()
+            window = gw.getWindowsAt(x, y)
+        else:
+            window = [gw.getActiveWindow()]
+
+        if window:
+            window = window[0]
+            window_title = window.title
+            window_width = window.right - window.left
+            window_height = window.bottom - window.top
+            self.active_window = window
+            try:
+                pid = ctypes.windll.user32.GetWindowThreadProcessId(window._hWnd, None)
+            except Exception as e:
+                pid = "N/A"
+            window_info = f"{window_title}\nPID: {pid}"
+            adjusted_width = window_width - 16
+            adjusted_height = window_height - 39
+            window_size_info = f"{window_width}x{window_height}\nAdjusted: ({adjusted_width}, {adjusted_height})"
+            self.set_text(self.title_text, window_info)
+            self.set_text(self.window_size_text, window_size_info)
+        else:
+            self.active_window = None
+            self.set_text(self.title_text, "No active window")
+            self.set_text(self.window_size_text, "")
+
+    def update_mouse_position(self):
+        try:
+            x, y = pyautogui.position()
+            mouse_info = f"Screen: ({x}, {y})"
+            if self.active_window:
+                rel_x = x - self.active_window.left
+                rel_y = y - self.active_window.top
+                mouse_info += f"\nWindow: ({rel_x}, {rel_y})"
+            self.set_text(self.mouse_pos_text, mouse_info)
+        except Exception as e:
+            self.set_text(self.mouse_pos_text, f"Error: {e}")
+
+    def update_color_under_mouse(self):
+        try:
+            x, y = pyautogui.position()
+            img = ImageGrab.grab(bbox=(x, y, x + 1, y + 1))
+            color = img.getpixel((0, 0))
+            hex_color = '#%02x%02x%02x' % color
+            color_info = f"RGB: {color}\nHex: {hex_color}"
+            self.set_text(self.color_text, color_info)
+            self.color_preview.config(bg=hex_color)
+        except Exception as e:
+            self.set_text(self.color_text, f"Error: {e}")
+            self.color_preview.config(bg="white")
+
+    def toggle_updates(self, event):
+        self.updates_enabled = not self.updates_enabled
+
+    @staticmethod
+    def set_text(widget, text):
+        widget.config(state="normal")
+        widget.delete("1.0", tk.END)
+        widget.insert("1.0", text)
+        widget.config(state="disabled")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    window_spy = WindowSpy(root)
+    root.mainloop()
