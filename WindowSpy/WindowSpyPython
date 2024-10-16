@@ -15,18 +15,25 @@ class WindowSpy:
     def __init__(self, root):
         self.root = root
         self.root.title("Window Spy for Python")
-        self.root.geometry("300x340")  # Subtracting 16 and 39 to compensate for window decorations
+        self.root.geometry("300x350")  # Subtracting 16 and 39 to compensate for window decorations
         self.root.resizable(False, False)
         
         # Adding Widgets
         self.follow_mouse = tk.BooleanVar(value=True)
         self.updates_enabled = True
+        self.always_on_top = tk.BooleanVar(value=False)
         
         self.title_label = ttk.Label(self.root, text="Window Title, Class and Process:")
         self.title_label.pack(anchor=tk.W, padx=5, pady=(5, 0))
         
-        self.follow_mouse_check = ttk.Checkbutton(self.root, text="Follow Mouse", variable=self.follow_mouse)
-        self.follow_mouse_check.pack(anchor=tk.W, padx=5)
+        self.top_frame = ttk.Frame(self.root)
+        self.top_frame.pack(fill=tk.X, padx=5, pady=(5, 0))
+        
+        self.follow_mouse_check = ttk.Checkbutton(self.top_frame, text="Follow Mouse", variable=self.follow_mouse)
+        self.follow_mouse_check.pack(side=tk.LEFT, anchor=tk.W)
+        
+        self.always_on_top_check = ttk.Checkbutton(self.top_frame, text="Always on Top", variable=self.always_on_top, command=self.toggle_always_on_top)
+        self.always_on_top_check.pack(side=tk.RIGHT, anchor=tk.E)
         
         self.title_text = tk.Text(self.root, height=3, width=35, state="disabled", wrap="none")
         self.title_text.pack(padx=5)
@@ -131,6 +138,9 @@ class WindowSpy:
 
     def toggle_updates(self, event):
         self.updates_enabled = not self.updates_enabled
+
+    def toggle_always_on_top(self):
+        self.root.attributes("-topmost", self.always_on_top.get())
 
     @staticmethod
     def set_text(widget, text):
