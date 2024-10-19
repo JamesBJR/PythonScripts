@@ -9,9 +9,13 @@ from sklearn.metrics import classification_report, accuracy_score
 
 # Load dataset
 def load_chess_pieces_data(data_folder):
+    
+    def determine_piece_color(img):
+        avg_intensity = np.mean(img)
+        return 'w' if avg_intensity > 127 else 'b'
     X = []
     y = []
-    piece_labels = ["wp", "wr", "wn", "wb", "wq", "wk", "bp", "br", "bn", "bb", "bq", "bk"]
+    piece_labels = ["wp", "wr", "wn", "wb", "wq", "wk", "bp", "br", "bn", "bb", "bq", "bk", "empty"]
     
     for label in piece_labels:
         folder_path = os.path.join(data_folder, label)
@@ -25,7 +29,10 @@ def load_chess_pieces_data(data_folder):
             if img is not None:
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             if img is not None:
+                piece_color = determine_piece_color(img)
                 img_resized = cv2.resize(img, (64, 64))
+                if label != 'empty':
+                    label = piece_color + label[1:]
                 features = hog(img_resized, orientations=9, pixels_per_cell=(8, 8), cells_per_block=(2, 2), block_norm='L2-Hys')
                 X.append(features)
                 y.append(label)

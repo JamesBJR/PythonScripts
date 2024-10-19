@@ -8,6 +8,7 @@ import os
 import json
 import joblib
 from skimage.feature import hog
+from sklearn.cluster import KMeans
 
 class ChessBoardDetector:
     def __init__(self, root):
@@ -130,19 +131,36 @@ class ChessBoardDetector:
         
         # Draw the chessboard grid and identify pieces
         screenshot_with_grid = screenshot.copy()
+        cells = []
         for i in range(board_size):
             for j in range(board_size):
                 top_left = (j * cell_width, i * cell_height)
                 bottom_right = ((j + 1) * cell_width, (i + 1) * cell_height)
                 cell = screenshot[top_left[1]:bottom_right[1], top_left[0]:bottom_right[0]]
+                cells.append(cell)
                 
-                # Identify the piece in the cell using HOG and SVM
-                piece_name = self.identify_piece_with_svm(cell)
-                if piece_name:
-                    cv2.putText(screenshot_with_grid, piece_name, (top_left[0] + 5, top_left[1] + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+        # Perform clustering to determine piece colors
+        colors = self.determine_piece_colors_with_clustering(cells)
+        
+        for idx, (i, j) in enumerate([(i, j) for i in range(board_size) for j in range(board_size)]):
+            top_left = (j * cell_width, i * cell_height)
+            bottom_right = ((j + 1) * cell_width, (i + 1) * cell_height)
+            cell = cells[idx]
+            piece_color = colors[idx]
+            
+            # Identify the piece in the cell using HOG and SVM
+            piece_name, confidence = self.identify_piece_with_svm(cell)
+            if piece_name and confidence > 0.8:  # Only consider predictions with high confidence
+                # Use the piece color to adjust the final prediction if applicable
+                if piece_color == "Black" and "White" in piece_name:
+                    continue  # Skip if prediction does not match color
+                if piece_color == "White" and "Black" in piece_name:
+                    continue  # Skip if prediction does not match color
                 
-                # Draw the grid
-                cv2.rectangle(screenshot_with_grid, top_left, bottom_right, (255, 0, 0), 1)
+                cv2.putText(screenshot_with_grid, piece_name, (top_left[0] + 5, top_left[1] + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+            
+            # Draw the grid
+            cv2.rectangle(screenshot_with_grid, top_left, bottom_right, (255, 0, 0), 1)
         
         # Display the result in the GUI
         self.display_image(screenshot_with_grid)
@@ -158,8 +176,35 @@ class ChessBoardDetector:
         features, _ = hog(cell_gray, orientations=9, pixels_per_cell=(8, 8), cells_per_block=(2, 2), visualize=True, block_norm='L2-Hys')
         
         # Predict the piece using the SVM model
-        prediction = self.svm_model.predict([features])
-        return prediction[0] if prediction else None
+        prediction = self.svm_model.decision_function([features])
+        confidence = max(prediction[0]) if len(prediction[0]) > 0 else 0
+        predicted_class = self.svm_model.classes_[np.argmax(prediction)] if confidence > 0 else None
+        return predicted_class, confidence
+
+    def determine_piece_colors_with_clustering(self, cells):
+        # Extract color features from each cell
+        features = []
+        for cell in cells:
+            cell_resized = cv2.resize(cell, (64, 64))
+            center_pixels = cell_resized[31:34, 31:34]  # Extract 9 center pixels (3x3)
+            avg_color = np.mean(center_pixels, axis=(0, 1))
+            features.append(avg_color)
+        
+        # Perform KMeans clustering to classify colors into two clusters
+        kmeans = KMeans(n_clusters=2, random_state=42)
+        labels = kmeans.fit_predict(features)
+        
+        # Determine dynamic thresholds for which cluster corresponds to black and which to white
+        cluster_centers = kmeans.cluster_centers_
+        avg_board_brightness = np.mean([np.mean(cell) for cell in cells])
+        if np.mean(cluster_centers[0]) < avg_board_brightness:
+            black_label, white_label = 0, 1
+        else:
+            black_label, white_label = 1, 0
+        
+        # Assign colors based on cluster labels
+        colors = ["Black" if label == black_label else "White" for label in labels]
+        return colors
 
     def display_image(self, img):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
