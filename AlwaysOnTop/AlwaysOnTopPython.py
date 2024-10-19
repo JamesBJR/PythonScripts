@@ -20,7 +20,7 @@ class AlwaysOnTopApp:
         self.title_label = tk.Entry(title_frame, textvariable=self.window_title, width=20, font=('Helvetica', 9))
         self.title_label.pack(pady=5)
 
-        self.toggle_button = tk.Button(root, text="Toggle Always On Top", command=self.toggle_always_on_top, font=('Helvetica', 10), bg='#007acc', fg='white')
+        self.toggle_button = tk.Button(root, text="Reset Windows", command=self.reset_modified_windows, font=('Helvetica', 10), bg='#007acc', fg='white')
         self.toggle_button.pack(pady=(5, 10))
 
         self.status_label = tk.Label(root, text="Press Shift + Space to toggle", font=('Helvetica', 8), wraplength=130)
@@ -33,6 +33,9 @@ class AlwaysOnTopApp:
         # Start the hotkey listener
         hotkey_thread = threading.Thread(target=self.hotkey_listener, daemon=True)
         hotkey_thread.start()
+
+        # Store modified windows
+        self.modified_windows = set()
 
     def start_move(self, event):
         self._x = event.x
@@ -68,8 +71,27 @@ class AlwaysOnTopApp:
                     text=f"'{window_title.value}' is now {'always on top' if not is_always_on_top else 'no longer always on top'}.",
                     fg='#007acc' if not is_always_on_top else '#d9534f'
                 )
+                # Store hwnd if modified
+                if not is_always_on_top:
+                    self.modified_windows.add(hwnd)
+                elif hwnd in self.modified_windows:
+                    self.modified_windows.remove(hwnd)
             else:
                 self.status_label.config(text="No active window found.", fg='#d9534f')
+        except (AttributeError, ctypes.WinError) as e:
+            self.status_label.config(text=f"Error: {str(e)}", fg='#d9534f')
+
+    def reset_modified_windows(self):
+        try:
+            for hwnd in list(self.modified_windows):
+                ctypes.windll.user32.SetWindowPos(
+                    hwnd,
+                    ctypes.c_void_p(-2),
+                    0, 0, 0, 0,
+                    0x0001 | 0x0002 | 0x0040
+                )
+                self.modified_windows.remove(hwnd)
+            self.status_label.config(text="Modified windows are now reset to normal state.", fg='#007acc')
         except (AttributeError, ctypes.WinError) as e:
             self.status_label.config(text=f"Error: {str(e)}", fg='#d9534f')
 

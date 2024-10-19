@@ -99,10 +99,6 @@ def on_hotkey_press(key):
     try:
         if hasattr(key, 'name'):
             key_str = key.name.lower()
-            
-            
-            
-            
         elif hasattr(key, 'char') and key.char is not None:
             key_str = key.char.lower()
         else:
@@ -148,37 +144,67 @@ def update_click_type(event):
     elif click_type_var.get() == "Right Click":
         click_type = Button.right
 
+# Functions to handle dragging the window
+def start_drag(event):
+    if event.widget == root or isinstance(event.widget, Label):
+        root.drag_start_x = event.x_root - root.winfo_x()
+        root.drag_start_y = event.y_root - root.winfo_y()
+
+def drag_window(event):
+    if event.widget == root or isinstance(event.widget, Label):
+        x = event.x_root - root.drag_start_x
+        y = event.y_root - root.drag_start_y
+        root.geometry(f"+{x}+{y}")
+
 # Create the GUI window
 root = tk.Tk()
 root.title("Auto Clicker")
 root.geometry("180x200")
 
+# Bind mouse events for dragging the window
+root.bind("<Button-1>", start_drag)
+root.bind("<B1-Motion>", drag_window)
+
 # Interval label and slider
 label_interval = tk.Label(root, text="Click Interval (ms):")
 label_interval.grid(row=0, column=0, columnspan=2, pady=2, padx=10, sticky="ew")
+label_interval.bind("<Button-1>", start_drag)  # Allow dragging when clicking on label
+label_interval.bind("<B1-Motion>", drag_window)  # Allow dragging when clicking on label
 
 slider_interval = tk.Scale(root, from_=5, to=1000, orient="horizontal")
 slider_interval.grid(row=1, column=0, columnspan=2, pady=2, padx=10, sticky="ew")
+slider_interval.bind("<Button-1>", lambda e: e.widget.focus_set())  # Prevent dragging when interacting with slider
+slider_interval.bind("<B1-Motion>", lambda e: None)  # Prevent dragging when interacting with slider
 
 # Click type dropdown
 click_type_var = tk.StringVar(root)
 click_type_var.set("Left Click")  # Default value
 click_type_dropdown = tk.OptionMenu(root, click_type_var, "Left Click", "Right Click", command=update_click_type)
 click_type_dropdown.grid(row=2, column=0, columnspan=2, pady=2, padx=10, sticky="ew")
+click_type_dropdown.bind("<Button-1>", lambda e: e.widget.focus_set())  # Prevent dragging when interacting with dropdown
+click_type_dropdown.bind("<B1-Motion>", lambda e: None)  # Prevent dragging when interacting with dropdown
 
 # Start and Stop buttons
 button_start = tk.Button(root, text="Start Clicking", command=start_clicking, bg="lightgreen")
 button_start.grid(row=3, column=0, pady=2, padx=5, sticky="ew")
+button_start.bind("<Button-1>", lambda e: e.widget.focus_set())  # Prevent dragging when interacting with button
+button_start.bind("<B1-Motion>", lambda e: None)  # Prevent dragging when interacting with button
 
 button_stop = tk.Button(root, text="Stop Clicking", command=stop_clicking, bg="lightcoral")
 button_stop.grid(row=3, column=1, pady=2, padx=5, sticky="ew")
+button_stop.bind("<Button-1>", lambda e: e.widget.focus_set())  # Prevent dragging when interacting with button
+button_stop.bind("<B1-Motion>", lambda e: None)  # Prevent dragging when interacting with button
 
 # Hotkey label and set button
 hotkey_label = tk.Label(root, text=f"Current Hotkey: {' + '.join(hotkey)}")
 hotkey_label.grid(row=4, column=0, columnspan=2, pady=2, padx=10, sticky="ew")
+hotkey_label.bind("<Button-1>", start_drag)  # Allow dragging when clicking on label
+hotkey_label.bind("<B1-Motion>", drag_window)  # Allow dragging when clicking on label
 
 button_set_hotkey = tk.Button(root, text="Set Hotkey", command=set_hotkey)
 button_set_hotkey.grid(row=5, column=0, columnspan=2, pady=2, padx=10, sticky="ew")
+button_set_hotkey.bind("<Button-1>", lambda e: e.widget.focus_set())  # Prevent dragging when interacting with button
+button_set_hotkey.bind("<B1-Motion>", lambda e: None)  # Prevent dragging when interacting with button
 
 # Run the GUI loop
 root.mainloop()
