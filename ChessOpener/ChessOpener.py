@@ -60,6 +60,9 @@ class ChessBoardDetector:
         # Store the latest screenshot with grid for drawing moves
         self.screenshot_with_grid = None
 
+        # Bind space bar event to reanalyze board
+        self.root.bind("<space>", self.on_space_press)
+
     def load_coordinates(self):
         try:
             with open("chessboard_coordinates.json", "r") as file:
@@ -362,6 +365,9 @@ class ChessBoardDetector:
         imgtk = ImageTk.PhotoImage(image=img)
         self.image_label.imgtk = imgtk
         self.image_label.configure(image=imgtk)
+
+    def on_space_press(self, event):
+        self.analyze_board()
 
 if __name__ == "__main__":
     root = tk.Tk()
