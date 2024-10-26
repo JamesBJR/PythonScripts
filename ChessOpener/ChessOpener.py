@@ -8,7 +8,8 @@ import os
 import json
 import joblib
 from skimage.feature import hog
-from sklearn.cluster import KMeans
+from stockfish import Stockfish
+import threading
 
 class ChessBoardDetector:
     def __init__(self, root):
@@ -24,10 +25,25 @@ class ChessBoardDetector:
         
         # Create buttons: 'Select Area', 'Analyze Board'
         self.screenshot_button = tk.Button(root, text="Select Area", command=self.select_area)
-        self.screenshot_button.pack(side="top", pady=5)
+        self.screenshot_button.pack(side="left", pady=5)
 
         self.analyze_button = tk.Button(root, text="Analyze Board", command=self.analyze_board)
-        self.analyze_button.pack(side="top", pady=5)
+        self.analyze_button.pack(side="right", pady=5)
+
+        # Create a checkbox to select the player's color
+        self.player_color_var = tk.StringVar(value="White")
+        self.player_color_checkbox = tk.Checkbutton(root, text="Player is Black", variable=self.player_color_var, onvalue="Black", offvalue="White")
+        self.player_color_checkbox.pack(side="top", pady=5)
+
+        # Threshold slider for color detection
+        self.threshold_value = tk.IntVar(value=148)  # Initial value for threshold
+        self.threshold_slider = tk.Scale(root, from_=50, to=400, orient="horizontal", label="Color Threshold", variable=self.threshold_value)
+        self.threshold_slider.pack(side="bottom", pady=5)
+
+        # Create a checkbox for recapturing and reanalyzing after best move
+        self.reanalyze_var = tk.BooleanVar(value=False)
+        self.reanalyze_checkbox = tk.Checkbutton(root, text="Recapture", variable=self.reanalyze_var)
+        self.reanalyze_checkbox.pack(side="right", pady=5)
 
         # Create a label to display the chessboard image
         self.image_label = tk.Label(root)
@@ -35,6 +51,14 @@ class ChessBoardDetector:
 
         # Load pre-trained SVM model for piece recognition
         self.svm_model = self.load_svm_model()
+
+        # Initialize Stockfish engine
+        stockfish_path = r"C:\GitHubRepos\MyPythonScripts\ChessOpener\stockfish\stockfish-windows-x86-64-avx2.exe"
+        self.stockfish_path = stockfish_path
+        self.initialize_stockfish()
+
+        # Store the latest screenshot with grid for drawing moves
+        self.screenshot_with_grid = None
 
     def load_coordinates(self):
         try:
@@ -65,6 +89,14 @@ class ChessBoardDetector:
         else:
             print("Model file not found. Please train the SVM model first.")
             return None
+
+    def initialize_stockfish(self):
+        try:
+            self.stockfish = Stockfish(self.stockfish_path)
+            self.stockfish.set_skill_level(10)  # Adjust skill level as needed
+        except Exception as e:
+            print(f"Failed to initialize Stockfish: {e}")
+            self.stockfish = None
 
     def select_area(self):
         # Hide the window to take a screenshot of full screen
@@ -130,8 +162,9 @@ class ChessBoardDetector:
         cell_height = height // board_size
         
         # Draw the chessboard grid and identify pieces
-        screenshot_with_grid = screenshot.copy()
+        self.screenshot_with_grid = screenshot.copy()
         cells = []
+        board_position = [['' for _ in range(board_size)] for _ in range(board_size)]
         for i in range(board_size):
             for j in range(board_size):
                 top_left = (j * cell_width, i * cell_height)
@@ -139,31 +172,173 @@ class ChessBoardDetector:
                 cell = screenshot[top_left[1]:bottom_right[1], top_left[0]:bottom_right[0]]
                 cells.append(cell)
                 
-        # Perform clustering to determine piece colors
-        colors = self.determine_piece_colors_with_clustering(cells)
+        # Perform color analysis using mean brightness to determine piece colors
+        colors = self.determine_piece_colors(cells)
         
+        # Define the chessboard coordinates based on player color
+        player_color = self.player_color_var.get()
+        if player_color == "White":
+            board_coordinates = [[f'{chr(97 + j)}{8 - i}' for j in range(board_size)] for i in range(board_size)]
+        else:
+            board_coordinates = [[f'{chr(97 + j)}{i + 1}' for j in range(board_size)] for i in range(board_size)]
+
         for idx, (i, j) in enumerate([(i, j) for i in range(board_size) for j in range(board_size)]):
             top_left = (j * cell_width, i * cell_height)
             bottom_right = ((j + 1) * cell_width, (i + 1) * cell_height)
             cell = cells[idx]
-            piece_color = colors[idx]
             
             # Identify the piece in the cell using HOG and SVM
             piece_name, confidence = self.identify_piece_with_svm(cell)
             if piece_name and confidence > 0.8:  # Only consider predictions with high confidence
+                # Add piece color label at the bottom of the cell if not identified as empty
+                piece_color = colors[idx] if piece_name.lower() != "empty" else ""
+                if piece_name.lower() != "empty":
+                    color_label_y = bottom_right[1] - 10
+                    color = (0, 0, 0) if piece_color == 'Black' else (255, 255, 255)
+                    cv2.putText(self.screenshot_with_grid, piece_color, (top_left[0] + 5, color_label_y), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
+                    
+                    # Update board position
+                    piece_fen = 'n' if piece_name.lower() == 'knight' and piece_color == 'Black' else 'N' if piece_name.lower() == 'knight' and piece_color == 'White' else piece_name[0].lower() if piece_color == 'Black' else piece_name[0].upper()
+                    board_position[i][j] = piece_fen
+                
                 # Use the piece color to adjust the final prediction if applicable
                 if piece_color == "Black" and "White" in piece_name:
                     continue  # Skip if prediction does not match color
                 if piece_color == "White" and "Black" in piece_name:
                     continue  # Skip if prediction does not match color
                 
-                cv2.putText(screenshot_with_grid, piece_name, (top_left[0] + 5, top_left[1] + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+                cv2.putText(self.screenshot_with_grid, piece_name, (top_left[0] + 5, top_left[1] + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+            
+            # Add coordinates in the middle of each cell with orange color
+            coord = board_coordinates[i][j]
+            coord_x = top_left[0] + cell_width // 2 - 10
+            coord_y = top_left[1] + cell_height // 2 + 5
+            cv2.putText(self.screenshot_with_grid, coord, (coord_x, coord_y), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 165, 255), 1, cv2.LINE_AA)
             
             # Draw the grid
-            cv2.rectangle(screenshot_with_grid, top_left, bottom_right, (255, 0, 0), 1)
+            cv2.rectangle(self.screenshot_with_grid, top_left, bottom_right, (255, 0, 0), 1)
         
-        # Display the result in the GUI
-        self.display_image(screenshot_with_grid)
+        # Generate FEN notation
+        fen_rows = []
+        for row in board_position:
+            empty_count = 0
+            fen_row = ''
+            for cell in row:
+                if cell == '':
+                    empty_count += 1
+                else:
+                    if empty_count > 0:
+                        fen_row += str(empty_count)
+                        empty_count = 0
+                    fen_row += cell
+            if empty_count > 0:
+                fen_row += str(empty_count)
+            fen_rows.append(fen_row)
+        fen = '/'.join(fen_rows) + (' b' if self.player_color_var.get() == 'Black' else ' w') + ' KQkq - 0 1'
+        print("FEN Notation:", fen)
+        
+        # Display the updated board with grid
+        self.display_image(self.screenshot_with_grid)
+
+        # Use a separate thread to get the best move to avoid blocking the GUI
+        threading.Thread(target=self.get_best_move_and_draw, args=(fen,)).start()
+
+    def determine_piece_colors(self, cells):
+        colors = []
+        # Get the current threshold value from the slider
+        brightness_threshold = self.threshold_value.get()
+        for cell in cells:
+            # Convert the cell to grayscale
+            cell_gray = cv2.cvtColor(cell, cv2.COLOR_BGR2GRAY)
+            
+            # Calculate the average brightness of the cell
+            avg_brightness = np.mean(cell_gray)
+            
+            # Classify based on brightness threshold
+            if avg_brightness > brightness_threshold:
+                colors.append("White")
+            else:
+                colors.append("Black")
+    
+        return colors
+
+    def get_best_move_and_draw(self, fen):
+        start, end = self.get_best_move(fen)
+        if start is None or end is None:
+            print("No move available.")
+            return
+
+        print(f"The best move is from {start} to {end}.")
+        
+        # Now that we have the move, we need to update the GUI.
+        # Tkinter GUI updates must be run on the main thread.
+        self.root.after(0, self.highlight_best_move, start, end)
+
+    def highlight_best_move(self, start, end):
+        # Assume the selected area is a perfect square chessboard
+        board_size = 8
+        cell_width = (self.end_x - self.start_x) // board_size
+        cell_height = (self.end_y - self.start_y) // board_size
+
+        # Define the chessboard coordinates based on player color
+        player_color = self.player_color_var.get()
+        if player_color == "White":
+            board_coordinates = [[f'{chr(97 + j)}{8 - i}' for j in range(board_size)] for i in range(board_size)]
+        else:
+            board_coordinates = [[f'{chr(97 + j)}{i + 1}' for j in range(board_size)] for i in range(board_size)]
+
+        start_x, start_y = self.get_cell_coordinates(start, board_coordinates, cell_width, cell_height)
+        end_x, end_y = self.get_cell_coordinates(end, board_coordinates, cell_width, cell_height)
+        
+        if start_x is not None and end_x is not None:
+            # Draw the best move on the original screenshot with grid
+            cv2.rectangle(self.screenshot_with_grid, (start_x, start_y), (start_x + cell_width, start_y + cell_height), (0, 255, 0), 3)
+            cv2.rectangle(self.screenshot_with_grid, (end_x, end_y), (end_x + cell_width, end_y + cell_height), (0, 0, 255), 3)
+            
+            # Display the result in the GUI
+            self.display_image(self.screenshot_with_grid)
+
+            # If the reanalyze checkbox is checked, reanalyze the board
+            if self.reanalyze_var.get():
+                threading.Thread(target=self.analyze_board).start()
+
+    def get_best_move(self, fen):
+        if self.stockfish is None:
+            print("Stockfish is not initialized. Reinitializing...")
+            self.initialize_stockfish()
+            if self.stockfish is None:
+                print("Failed to reinitialize Stockfish.")
+                return None, None
+        
+        try:
+            # Set the FEN position
+            self.stockfish.set_fen_position(fen)
+            
+            # Get the best move from Stockfish
+            best_move = self.stockfish.get_best_move()
+        except Exception as e:
+            print(f"Stockfish process crashed: {e}. Reinitializing...")
+            self.initialize_stockfish()
+            if self.stockfish is None:
+                return None, None
+            self.stockfish.set_fen_position(fen)
+            best_move = self.stockfish.get_best_move()
+        
+        if best_move is None:
+            return None, None
+        
+        # Split the move into starting and ending coordinates
+        start_pos = best_move[:2]
+        end_pos = best_move[2:]
+        
+        return start_pos, end_pos
+
+    def get_cell_coordinates(self, coord, board_coordinates, cell_width, cell_height):
+        for i, row in enumerate(board_coordinates):
+            for j, board_coord in enumerate(row):
+                if board_coord == coord:
+                    return j * cell_width, i * cell_height
+        return None, None
 
     def identify_piece_with_svm(self, cell):
         # Resize cell to a fixed size
@@ -180,31 +355,6 @@ class ChessBoardDetector:
         confidence = max(prediction[0]) if len(prediction[0]) > 0 else 0
         predicted_class = self.svm_model.classes_[np.argmax(prediction)] if confidence > 0 else None
         return predicted_class, confidence
-
-    def determine_piece_colors_with_clustering(self, cells):
-        # Extract color features from each cell
-        features = []
-        for cell in cells:
-            cell_resized = cv2.resize(cell, (64, 64))
-            center_pixels = cell_resized[31:34, 31:34]  # Extract 9 center pixels (3x3)
-            avg_color = np.mean(center_pixels, axis=(0, 1))
-            features.append(avg_color)
-        
-        # Perform KMeans clustering to classify colors into two clusters
-        kmeans = KMeans(n_clusters=2, random_state=42)
-        labels = kmeans.fit_predict(features)
-        
-        # Determine dynamic thresholds for which cluster corresponds to black and which to white
-        cluster_centers = kmeans.cluster_centers_
-        avg_board_brightness = np.mean([np.mean(cell) for cell in cells])
-        if np.mean(cluster_centers[0]) < avg_board_brightness:
-            black_label, white_label = 0, 1
-        else:
-            black_label, white_label = 1, 0
-        
-        # Assign colors based on cluster labels
-        colors = ["Black" if label == black_label else "White" for label in labels]
-        return colors
 
     def display_image(self, img):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
