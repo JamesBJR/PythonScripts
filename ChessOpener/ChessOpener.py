@@ -10,6 +10,7 @@ import joblib
 from skimage.feature import hog
 from stockfish import Stockfish
 import threading
+import keyboard
 
 class ChessBoardDetector:
     def __init__(self, root):
@@ -71,6 +72,7 @@ class ChessBoardDetector:
 
         # Bind space bar event to reanalyze board
         self.root.bind("<space>", self.on_space_press)
+        keyboard.add_hotkey('a', lambda: self.analyze_board())
 
     def load_coordinates(self):
         try:
