@@ -244,6 +244,13 @@ class ChessBoardDetector:
                 fen_row += str(empty_count)
             fen_rows.append(fen_row)
         fen = '/'.join(fen_rows) + (' b' if self.player_color_var.get() == 'Black' else ' w') + f' {castling_rights} - 0 1'
+        
+        # Flip the FEN if the player is black to adjust the board perspective
+        if self.player_color_var.get() == 'Black':
+            fen_rows = fen.split(' ')[0].split('/')
+            fen_rows = [row[::-1] for row in reversed(fen_rows)]
+            fen = '/'.join(fen_rows) + (' b' if self.player_color_var.get() == 'Black' else ' w') + f' {castling_rights} - 0 1'
+
         print("FEN Notation:", fen)
         
         # Display the updated board with grid
