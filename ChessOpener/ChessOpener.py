@@ -13,6 +13,8 @@ import threading
 import keyboard
 import mouse
 
+
+
 class ChessBoardDetector:
     def __init__(self, root):
         self.root = root
@@ -332,6 +334,65 @@ class ChessBoardDetector:
         # Now that we have the move, we need to update the GUI.
         # Tkinter GUI updates must be run on the main thread.
         self.root.after(0, self.highlight_best_move, start, end)
+        self.root.after(0, self.highlight_over_screen, start, end)
+
+    def highlight_over_screen(self, start, end):
+        # Assume the selected area is a perfect square chessboard
+        board_size = 8
+        cell_width = (self.end_x - self.start_x) // board_size
+        cell_height = (self.end_y - self.start_y) // board_size
+
+        # Define the chessboard coordinates based on player color
+        board_coordinates = self.get_board_coordinates()
+
+        start_x, start_y = self.get_cell_coordinates(start, board_coordinates, cell_width, cell_height)
+        end_x, end_y = self.get_cell_coordinates(end, board_coordinates, cell_width, cell_height)
+        
+        if start_x is not None and end_x is not None:
+            # Destroy existing overlay boxes before creating new ones
+            if hasattr(self, 'current_overlays'):
+                for overlay in self.current_overlays:
+                    overlay.destroy()
+            else:
+                self.current_overlays = []
+
+            # Convert local coordinates to screen coordinates
+            screen_start_x = self.start_x + start_x
+            screen_start_y = self.start_y + start_y
+            screen_end_x = self.start_x + end_x
+            screen_end_y = self.start_y + end_y
+
+            # Create a transparent tkinter window for drawing the highlight box for the start position
+            overlay = tk.Toplevel(self.root)
+            overlay.attributes("-transparentcolor", "magenta")
+            overlay.attributes("-topmost", True)
+            overlay.geometry(f"{cell_width}x{cell_height}+{screen_start_x}+{screen_start_y}")
+            overlay.overrideredirect(True)
+
+            canvas = tk.Canvas(overlay, width=cell_width, height=cell_height, bg='magenta', highlightthickness=0)
+            canvas.pack()
+            canvas.create_rectangle(0, 0, cell_width, cell_height, outline='green', width=5)
+
+            # Add the overlay to the list of current overlays
+            self.current_overlays.append(overlay)
+
+            # Create a transparent tkinter window for drawing the highlight box for the end position
+            overlay_end = tk.Toplevel(self.root)
+            overlay_end.attributes("-transparentcolor", "magenta")
+            overlay_end.attributes("-topmost", True)
+            overlay_end.geometry(f"{cell_width}x{cell_height}+{screen_end_x}+{screen_end_y}")
+            overlay_end.overrideredirect(True)
+
+            canvas_end = tk.Canvas(overlay_end, width=cell_width, height=cell_height, bg='magenta', highlightthickness=0)
+            canvas_end.pack()
+            canvas_end.create_rectangle(0, 0, cell_width, cell_height, outline='red', width=5)
+
+            # Add the overlay to the list of current overlays
+            self.current_overlays.append(overlay_end)
+
+
+
+
 
     def highlight_best_move(self, start, end):
         # Assume the selected area is a perfect square chessboard
@@ -382,6 +443,11 @@ class ChessBoardDetector:
         
         if best_move is None:
             return None, None
+        
+         # **Promotion Check**:
+        if len(best_move) == 5:
+            best_move = best_move[:4]  # Strip off the promotion character (e.g., "q")
+
         
         # Split the move into starting and ending coordinates
         start_pos = best_move[:2]
