@@ -18,7 +18,7 @@ import mouse
 class ChessBoardDetector:
     def __init__(self, root):
         self.root = root
-        self.root.title("Chess Board Detector")
+        self.root.title("Chess Board")
         
         # Load previous selection coordinates if available
         self.start_x = None
@@ -49,10 +49,15 @@ class ChessBoardDetector:
         self.reanalyze_checkbox = tk.Checkbutton(root, text="Recapture", variable=self.reanalyze_var)
         self.reanalyze_checkbox.pack(side="right", pady=5)
 
+        # Button to destroy overlay boxes
+        self.clear_overlays_button = tk.Button(root, text="Clear Overlays", command=self.clear_overlay_boxes)
+        self.clear_overlays_button.pack(side="left", pady=5)
+
         # Stockfish Think Time Slider
         self.think_time_slider = tk.Scale(root, from_=100, to=10000, orient="horizontal", label="Think Time (ms)")
         self.think_time_slider.set(500)
         self.think_time_slider.pack(side="bottom", pady=5)
+
 
         # Create a label to display the chessboard image
         self.image_label = tk.Label(root)
@@ -69,8 +74,11 @@ class ChessBoardDetector:
         # Store the latest screenshot with grid for drawing moves
         self.screenshot_with_grid = None
 
+        # Flag to track if hotkeys are temporarily denied  
+        self.hotkey_denied = False  
+
         # Bind key event to reanalyze board
-        keyboard.add_hotkey('a', lambda: self.analyze_board())
+        keyboard.add_hotkey('a', lambda: self.analyze_board_if_ready())
         keyboard.add_hotkey('s', lambda: self.toggle_player_color())
 
             # Add hotkey for mouse wheel scroll up to analyze the board
@@ -79,7 +87,26 @@ class ChessBoardDetector:
     def on_mouse_event(self, event):
         # Check if the event is a wheel event and if it is a scroll up
         if isinstance(event, mouse.WheelEvent) and event.delta > 0:
-            self.analyze_board()
+            self.analyze_board_if_ready()
+            
+    def deny_hotkeys_for(self, duration):
+        # Method to deny hotkeys for a set amount of time
+        def deny():
+            self.hotkey_denied = True
+            time.sleep(duration)
+            self.hotkey_denied = False
+        threading.Thread(target=deny).start()
+
+    def analyze_board_if_ready(self):
+        # Only proceed if hotkeys are not denied
+        if not self.hotkey_denied:
+            threading.Thread(target=self.analyze_board).start()
+
+    def clear_overlay_boxes(self):
+        # Method to clear overlay boxes from the screen
+        for box in self.current_overlays:
+            box.destroy()
+        self.current_overlays.clear()
 
     def toggle_player_color(self):
         # Function to toggle the player's color checkbox
@@ -147,6 +174,13 @@ class ChessBoardDetector:
         selection_canvas = tk.Canvas(selection_window, cursor="cross", bg='black')
         selection_canvas.pack(fill="both", expand=True)
 
+        # Create a small zoom window
+        zoom_window = tk.Toplevel(selection_window)
+        zoom_window.title("Zoom View")
+        zoom_window.geometry("200x200")  # Fixed size for zoom window
+        zoom_label = tk.Label(zoom_window)
+        zoom_label.pack()
+
         self.rect = None
 
         def on_mouse_down(event):
@@ -157,9 +191,37 @@ class ChessBoardDetector:
             if self.rect is not None:
                 selection_canvas.coords(self.rect, self.start_x, self.start_y, event.x, event.y)
 
+            # Update zoom window
+            x, y = event.x, event.y
+            zoom_size = 40  # Size of the area to zoom in on
+            zoom_factor = 5  # Zoom factor
+
+            # Calculate bounding box for zoom area
+            left = max(0, x - zoom_size // 2)
+            top = max(0, y - zoom_size // 2)
+            right = min(screenshot.shape[1], x + zoom_size // 2)
+            bottom = min(screenshot.shape[0], y + zoom_size // 2)
+
+            # Crop and resize the zoom area
+            zoom_area = screenshot[top:bottom, left:right]
+            zoom_area = cv2.resize(zoom_area, (zoom_size * zoom_factor, zoom_size * zoom_factor), interpolation=cv2.INTER_LINEAR)
+            zoom_area = cv2.cvtColor(zoom_area, cv2.COLOR_BGR2RGB)
+
+            # Draw a box around the center pixel
+            zoom_area = np.array(zoom_area)
+            center_x = zoom_area.shape[1] // 2
+            center_y = zoom_area.shape[0] // 2
+            cv2.rectangle(zoom_area, (center_x - 2, center_y - 2), (center_x + 2, center_y + 2), (255, 0, 0), 1)
+
+            zoom_image = Image.fromarray(zoom_area)
+            zoom_photo = ImageTk.PhotoImage(zoom_image)
+            zoom_label.config(image=zoom_photo)
+            zoom_label.image = zoom_photo
+
         def on_mouse_up(event):
             self.end_x, self.end_y = event.x, event.y
             selection_window.destroy()
+            zoom_window.destroy()
             # Show the main window again
             self.root.deiconify()
             # Save the selected coordinates
@@ -170,8 +232,13 @@ class ChessBoardDetector:
         selection_canvas.bind("<ButtonPress-1>", on_mouse_down)
         selection_canvas.bind("<B1-Motion>", on_mouse_move)
         selection_canvas.bind("<ButtonRelease-1>", on_mouse_up)
+        selection_window.bind("<Motion>", on_mouse_move)
+
+
 
     def analyze_board(self):
+
+
         if self.start_x is None or self.start_y is None or self.end_x is None or self.end_y is None:
             print("Please select an area first.")
             return
@@ -179,6 +246,10 @@ class ChessBoardDetector:
         if not self.svm_model:
             print("SVM model not loaded. Cannot analyze the board.")
             return
+
+        think_time_ms = self.think_time_slider.get()  # Get the think time from the slider
+        think_time_seconds = think_time_ms / 1000.0  # Convert milliseconds to seconds
+        self.deny_hotkeys_for(think_time_seconds)  # Deny hotkeys for the same amount of time as the think time
 
         # Take a screenshot of the selected area
         screenshot = ImageGrab.grab(bbox=(self.start_x, self.start_y, self.end_x, self.end_y))
@@ -503,3 +574,4 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = ChessBoardDetector(root)
     root.mainloop()
+    keyboard.wait()  # Keep the program running to listen for hotkeys
