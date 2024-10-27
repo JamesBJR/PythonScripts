@@ -32,7 +32,7 @@ class ChessBoardDetector:
 
         # Create a checkbox to select the player's color
         self.player_color_var = tk.StringVar(value="White")
-        self.player_color_checkbox = tk.Checkbutton(root, text="Player is Black", variable=self.player_color_var, onvalue="Black", offvalue="White")
+        self.player_color_checkbox = tk.Checkbutton(root, text="Player is Black", variable=self.player_color_var, onvalue="Black", offvalue="White", command=self.update_board_coordinates)
         self.player_color_checkbox.pack(side="top", pady=5)
 
         # Threshold slider for color detection
@@ -44,6 +44,15 @@ class ChessBoardDetector:
         self.reanalyze_var = tk.BooleanVar(value=False)
         self.reanalyze_checkbox = tk.Checkbutton(root, text="Recapture", variable=self.reanalyze_var)
         self.reanalyze_checkbox.pack(side="right", pady=5)
+
+        # Create checkboxes for indicating if either player is in check
+        self.white_in_check_var = tk.BooleanVar(value=False)
+        self.white_in_check_checkbox = tk.Checkbutton(root, text="White has been put in check", variable=self.white_in_check_var)
+        self.white_in_check_checkbox.pack(side="top", pady=5)
+
+        self.black_in_check_var = tk.BooleanVar(value=False)
+        self.black_in_check_checkbox = tk.Checkbutton(root, text="Black has been put in check", variable=self.black_in_check_var)
+        self.black_in_check_checkbox.pack(side="top", pady=5)
 
         # Create a label to display the chessboard image
         self.image_label = tk.Label(root)
@@ -179,11 +188,7 @@ class ChessBoardDetector:
         colors = self.determine_piece_colors(cells)
         
         # Define the chessboard coordinates based on player color
-        player_color = self.player_color_var.get()
-        if player_color == "White":
-            board_coordinates = [[f'{chr(97 + j)}{8 - i}' for j in range(board_size)] for i in range(board_size)]
-        else:
-            board_coordinates = [[f'{chr(97 + j)}{i + 1}' for j in range(board_size)] for i in range(board_size)]
+        board_coordinates = self.get_board_coordinates()
 
         for idx, (i, j) in enumerate([(i, j) for i in range(board_size) for j in range(board_size)]):
             top_left = (j * cell_width, i * cell_height)
@@ -222,6 +227,7 @@ class ChessBoardDetector:
             cv2.rectangle(self.screenshot_with_grid, top_left, bottom_right, (255, 0, 0), 1)
         
         # Generate FEN notation
+        castling_rights = self.check_castling_rights(board_position)
         fen_rows = []
         for row in board_position:
             empty_count = 0
@@ -237,7 +243,7 @@ class ChessBoardDetector:
             if empty_count > 0:
                 fen_row += str(empty_count)
             fen_rows.append(fen_row)
-        fen = '/'.join(fen_rows) + (' b' if self.player_color_var.get() == 'Black' else ' w') + ' KQkq - 0 1'
+        fen = '/'.join(fen_rows) + (' b' if self.player_color_var.get() == 'Black' else ' w') + f' {castling_rights} - 0 1'
         print("FEN Notation:", fen)
         
         # Display the updated board with grid
@@ -245,6 +251,34 @@ class ChessBoardDetector:
 
         # Use a separate thread to get the best move to avoid blocking the GUI
         threading.Thread(target=self.get_best_move_and_draw, args=(fen,)).start()
+
+    def check_castling_rights(self, board_position):
+        white_castling_rights = {'K': True, 'Q': True}
+        black_castling_rights = {'k': True, 'q': True}
+        
+        # Check White Kingside Castling (K)
+        if board_position[7][4] != 'K' or board_position[7][7] != 'R' or board_position[7][5] or board_position[7][6]:
+            white_castling_rights['K'] = False
+
+        # Check White Queenside Castling (Q)
+        if board_position[7][4] != 'K' or board_position[7][0] != 'R' or board_position[7][1] or board_position[7][2] or board_position[7][3]:
+            white_castling_rights['Q'] = False
+
+        # Check Black Kingside Castling (k)
+        if board_position[0][4] != 'k' or board_position[0][7] != 'r' or board_position[0][5] or board_position[0][6]:
+            black_castling_rights['k'] = False
+
+        # Check Black Queenside Castling (q)
+        if board_position[0][4] != 'k' or board_position[0][0] != 'r' or board_position[0][1] or board_position[0][2] or board_position[0][3]:
+            black_castling_rights['q'] = False
+
+        # Build castling rights string
+        castling_rights = ""
+        castling_rights += 'K' if white_castling_rights['K'] else ''
+        castling_rights += 'Q' if white_castling_rights['Q'] else ''
+        castling_rights += 'k' if black_castling_rights['k'] else ''
+        castling_rights += 'q' if black_castling_rights['q'] else ''
+        return castling_rights if castling_rights else '-'
 
     def determine_piece_colors(self, cells):
         colors = []
@@ -284,11 +318,7 @@ class ChessBoardDetector:
         cell_height = (self.end_y - self.start_y) // board_size
 
         # Define the chessboard coordinates based on player color
-        player_color = self.player_color_var.get()
-        if player_color == "White":
-            board_coordinates = [[f'{chr(97 + j)}{8 - i}' for j in range(board_size)] for i in range(board_size)]
-        else:
-            board_coordinates = [[f'{chr(97 + j)}{i + 1}' for j in range(board_size)] for i in range(board_size)]
+        board_coordinates = self.get_board_coordinates()
 
         start_x, start_y = self.get_cell_coordinates(start, board_coordinates, cell_width, cell_height)
         end_x, end_y = self.get_cell_coordinates(end, board_coordinates, cell_width, cell_height)
@@ -365,6 +395,17 @@ class ChessBoardDetector:
         imgtk = ImageTk.PhotoImage(image=img)
         self.image_label.imgtk = imgtk
         self.image_label.configure(image=imgtk)
+
+    def update_board_coordinates(self):
+        self.analyze_board()
+
+    def get_board_coordinates(self):
+        player_color = self.player_color_var.get()
+        board_size = 8
+        if player_color == "White":
+            return [[f'{chr(97 + j)}{8 - i}' for j in range(board_size)] for i in range(board_size)]
+        else:
+            return [[f'{chr(97 + (board_size - 1 - j))}{i + 1}' for j in range(board_size)] for i in range(board_size)]
 
     def on_space_press(self, event):
         self.analyze_board()
