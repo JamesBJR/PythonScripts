@@ -46,14 +46,10 @@ class ChessBoardDetector:
         self.reanalyze_checkbox = tk.Checkbutton(root, text="Recapture", variable=self.reanalyze_var)
         self.reanalyze_checkbox.pack(side="right", pady=5)
 
-        # Create checkboxes for indicating if either player is in check
-        self.white_in_check_var = tk.BooleanVar(value=False)
-        self.white_in_check_checkbox = tk.Checkbutton(root, text="White has been put in check", variable=self.white_in_check_var)
-        self.white_in_check_checkbox.pack(side="top", pady=5)
-
-        self.black_in_check_var = tk.BooleanVar(value=False)
-        self.black_in_check_checkbox = tk.Checkbutton(root, text="Black has been put in check", variable=self.black_in_check_var)
-        self.black_in_check_checkbox.pack(side="top", pady=5)
+        # Stockfish Think Time Slider
+        self.think_time_slider = tk.Scale(root, from_=100, to=10000, orient="horizontal", label="Think Time (ms)")
+        self.think_time_slider.set(500)
+        self.think_time_slider.pack(side="bottom", pady=5)
 
         # Create a label to display the chessboard image
         self.image_label = tk.Label(root)
@@ -70,9 +66,18 @@ class ChessBoardDetector:
         # Store the latest screenshot with grid for drawing moves
         self.screenshot_with_grid = None
 
-        # Bind space bar event to reanalyze board
-        self.root.bind("<space>", self.on_space_press)
+        # Bind key event to reanalyze board
         keyboard.add_hotkey('a', lambda: self.analyze_board())
+        keyboard.add_hotkey('s', lambda: self.toggle_player_color())
+
+    def toggle_player_color(self):
+        # Function to toggle the player's color checkbox
+        if self.player_color_var.get() == "White":
+            self.player_color_var.set("Black")
+        else:
+            self.player_color_var.set("White")
+        self.update_board_coordinates()  # Update the board after toggling
+
 
     def load_coordinates(self):
         try:
@@ -265,19 +270,18 @@ class ChessBoardDetector:
         white_castling_rights = {'K': True, 'Q': True}
         black_castling_rights = {'k': True, 'q': True}
         
-        # Check White Kingside Castling (K)
+        # Automatically determine if kings have been in check based on board state
+        # Check if white king or rooks have moved or if there are pieces in the way for castling
         if board_position[7][4] != 'K' or board_position[7][7] != 'R' or board_position[7][5] or board_position[7][6]:
             white_castling_rights['K'] = False
 
-        # Check White Queenside Castling (Q)
         if board_position[7][4] != 'K' or board_position[7][0] != 'R' or board_position[7][1] or board_position[7][2] or board_position[7][3]:
             white_castling_rights['Q'] = False
 
-        # Check Black Kingside Castling (k)
+        # Check if black king or rooks have moved or if there are pieces in the way for castling
         if board_position[0][4] != 'k' or board_position[0][7] != 'r' or board_position[0][5] or board_position[0][6]:
             black_castling_rights['k'] = False
 
-        # Check Black Queenside Castling (q)
         if board_position[0][4] != 'k' or board_position[0][0] != 'r' or board_position[0][1] or board_position[0][2] or board_position[0][3]:
             black_castling_rights['q'] = False
 
@@ -357,7 +361,8 @@ class ChessBoardDetector:
             self.stockfish.set_fen_position(fen)
             
             # Get the best move from Stockfish
-            best_move = self.stockfish.get_best_move()
+            think_time = self.think_time_slider.get()
+            best_move = self.stockfish.get_best_move_time(think_time)
         except Exception as e:
             print(f"Stockfish process crashed: {e}. Reinitializing...")
             self.initialize_stockfish()
