@@ -11,6 +11,7 @@ from skimage.feature import hog
 from stockfish import Stockfish
 import threading
 import keyboard
+import mouse
 
 class ChessBoardDetector:
     def __init__(self, root):
@@ -69,6 +70,14 @@ class ChessBoardDetector:
         # Bind key event to reanalyze board
         keyboard.add_hotkey('a', lambda: self.analyze_board())
         keyboard.add_hotkey('s', lambda: self.toggle_player_color())
+
+            # Add hotkey for mouse wheel scroll up to analyze the board
+        mouse.hook(self.on_mouse_event)
+
+    def on_mouse_event(self, event):
+        # Check if the event is a wheel event and if it is a scroll up
+        if isinstance(event, mouse.WheelEvent) and event.delta > 0:
+            self.analyze_board()
 
     def toggle_player_color(self):
         # Function to toggle the player's color checkbox
